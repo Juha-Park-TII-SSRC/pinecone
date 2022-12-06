@@ -1,4 +1,4 @@
-module github.com/matrix-org/pinecone
+module github.com/juha-park-tii-ssrc/pinecone
 
 go 1.14
 
