@@ -349,7 +349,7 @@ func (m *Multicast) startIPv4(intf *multicastInterface) {
 	}
 	m.log.Printf("Multicast discovery enabled on %s (%s)\n", intf.Name, srcaddr.String())
 	m.interfaces.Store(intf.Name, intf)
-	go m.advertise(intf, conn, addr)
+	go m.advertise(intf, conn, addr, srcaddr)
 	go m.listen(intf, conn, &net.TCPAddr{
 		IP:   srcaddr,
 		Zone: addr.Zone,
@@ -411,14 +411,14 @@ func (m *Multicast) startIPv6(intf *multicastInterface) {
 	}
 	m.log.Printf("Multicast discovery enabled on %s (%s)\n", intf.Name, srcaddr.String())
 	m.interfaces.Store(intf.Name, intf)
-	go m.advertise(intf, conn, addr)
+	go m.advertise(intf, conn, addr, nil)
 	go m.listen(intf, conn, &net.TCPAddr{
 		IP:   srcaddr,
 		Zone: addr.Zone,
 	})
 }
 
-func (m *Multicast) advertise(intf *multicastInterface, conn net.PacketConn, addr net.Addr) {
+func (m *Multicast) advertise(intf *multicastInterface, conn net.PacketConn, addr net.Addr, srcaddr net.IP) {
 	defer m.interfaces.Delete(intf.Name)
 	// defer m.log.Println("Stop advertising on", intf.Name)
 	tcpaddr, _ := m.listener.Addr().(*net.TCPAddr)
@@ -428,6 +428,12 @@ func (m *Multicast) advertise(intf *multicastInterface, conn net.PacketConn, add
 	first := make(chan struct{}, 1)
 	first <- struct{}{}
 	ourPublicKey := m.r.PublicKey()
+
+	if srcaddr != nil {
+		portBytes = append(portBytes, srcaddr.To4()...)
+		m.log.Println("This Pinecone supports adding IPv4 address at the end of Multicast.")
+	}
+
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -487,6 +493,10 @@ func (m *Multicast) listen(intf *multicastInterface, conn net.PacketConn, srcadd
 
 		if m.r.IsConnected(neighborKey, udpaddr.Zone) {
 			continue
+		}
+
+		if n == ed25519.PublicKeySize+6 { // 2bytes for port and 4 bytes for IPv4 address
+			udpaddr.IP = buf[ed25519.PublicKeySize+2 : ed25519.PublicKeySize+6]
 		}
 
 		tcpaddr := &net.TCPAddr{
